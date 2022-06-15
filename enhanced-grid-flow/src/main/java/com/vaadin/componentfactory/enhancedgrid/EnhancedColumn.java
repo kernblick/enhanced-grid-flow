@@ -152,7 +152,7 @@ public class EnhancedColumn<T> extends Grid.Column<T> {
 		return filter; 
 	}	
 	
-	void updateFilterButtonStyle(){
+	public void updateFilterButtonStyle(){
 		if(headerComponent != null) {
 			headerComponent.getElement().executeJs("return").then(ignore -> {
 				if(hasFilterSelected()) {
@@ -164,7 +164,7 @@ public class EnhancedColumn<T> extends Grid.Column<T> {
 		}		
 	}
 	
-	ValueProvider<T, ?> getValueProvider(){
+	public ValueProvider<T, ?> getValueProvider(){
 		if (this.valueProvider != null) {
 			 return this.valueProvider;
 		} else if (this.getRenderer() instanceof ColumnPathRenderer) { 

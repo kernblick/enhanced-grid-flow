@@ -22,32 +22,32 @@ package com.vaadin.componentfactory.enhancedgrid;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.jpa.domain.Specification;
+
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.ComponentEvent;
 import com.vaadin.flow.component.ComponentEventListener;
-import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.dependency.CssImport;
 import com.vaadin.flow.component.grid.ApplyFilterListener;
 import com.vaadin.flow.component.grid.CancelEditConfirmDialog;
-import com.vaadin.flow.component.grid.CustomAbstractGridMultiSelectionModel;
-import com.vaadin.flow.component.grid.CustomAbstractGridSingleSelectionModel;
 import com.vaadin.flow.component.grid.Filter;
+import com.vaadin.flow.component.grid.FilterAppliedEvent;
 import com.vaadin.flow.component.grid.FilterClickedEvent;
 import com.vaadin.flow.component.grid.FilterField;
+import com.vaadin.flow.component.grid.FilterFieldDto;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridArrayUpdater;
 import com.vaadin.flow.component.grid.GridArrayUpdater.UpdateQueueData;
-import com.vaadin.flow.component.grid.GridSelectionModel;
+import com.vaadin.flow.component.grid.filtering.BackendFilterFieldDto;
 import com.vaadin.flow.data.provider.ConfigurableFilterDataProvider;
 import com.vaadin.flow.data.provider.DataGenerator;
 import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.provider.ListDataProvider;
 import com.vaadin.flow.data.renderer.Renderer;
-import com.vaadin.flow.data.selection.SelectionEvent;
 import com.vaadin.flow.function.SerializableBiFunction;
 import com.vaadin.flow.function.SerializableFunction;
 import com.vaadin.flow.function.SerializablePredicate;
@@ -69,6 +69,8 @@ import elemental.json.JsonObject;
 @CssImport(value = "./styles/enhanced-grid-selection-disabled.css", themeFor = "vaadin-grid")
 public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, ApplyFilterListener {
 
+	protected static final Logger log = LoggerFactory.getLogger(EnhancedGrid.class.getName());
+
 	private static final String CANCEL_EDIT_MSG_KEY = "cancel-edit-dialog.text";
 	    
     private static final String CANCEL_EDIT_CONFIRM_BTN_KEY = "cancel-edit-dialog.confirm-btn";
@@ -81,7 +83,11 @@ public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, App
     
     private SerializablePredicate<T> editablePredicate = item -> true;
         
-    private boolean showCancelEditDialog = true;	    
+    private boolean showCancelEditDialog = true;
+
+	private Specification<T> filterSpecification = null;
+
+	private boolean filterBackend = true;
     	
     SerializableFunction<T, String> selectionDisabled = new SerializableFunction<T, String>() {
 
@@ -219,42 +225,46 @@ public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, App
         }
     }
     
-    @Override
-    public GridSelectionModel<T> setSelectionMode(SelectionMode selectionMode) {
-        if (selectionMode == SelectionMode.MULTI) {
+	/**
+	 * Disabling this method to disable custom selection mode from enhanced grid (which has a client JS bug)
+	 * but use standard vaadin selection mode instead
+	 */
+    // @Override
+    // public GridSelectionModel<T> setSelectionMode(SelectionMode selectionMode) {
+    //     if (selectionMode == SelectionMode.MULTI) {
 
-            Objects.requireNonNull(selectionMode, "Selection mode cannot be null.");
-            GridSelectionModel<T> model = new CustomAbstractGridMultiSelectionModel<T>(this) {
+    //         Objects.requireNonNull(selectionMode, "Selection mode cannot be null.");
+    //         GridSelectionModel<T> model = new CustomAbstractGridMultiSelectionModel<T>(this) {
 
-                @Override
-                protected void fireSelectionEvent(SelectionEvent<Grid<T>, T> event) {
-                    ComponentUtil.fireEvent(getGrid(), (ComponentEvent<Grid<?>>) event);
-                }
-            };
-            setSelectionModel(model, selectionMode);
-            return model;
-        } else  if (selectionMode == SelectionMode.SINGLE) {
-            GridSelectionModel<T> model = new CustomAbstractGridSingleSelectionModel<T>(this) {
+    //             @Override
+    //             protected void fireSelectionEvent(SelectionEvent<Grid<T>, T> event) {
+    //                 ComponentUtil.fireEvent(getGrid(), (ComponentEvent<Grid<?>>) event);
+    //             }
+    //         };
+    //         setSelectionModel(model, selectionMode);
+    //         return model;
+    //     } else  if (selectionMode == SelectionMode.SINGLE) {
+    //         GridSelectionModel<T> model = new CustomAbstractGridSingleSelectionModel<T>(this) {
 
-                @Override
-                protected void fireSelectionEvent(SelectionEvent<Grid<T>, T> event) {
-                    ComponentUtil.fireEvent(getGrid(), (ComponentEvent<Grid<?>>) event);
-                }
+    //             @Override
+    //             protected void fireSelectionEvent(SelectionEvent<Grid<T>, T> event) {
+    //                 ComponentUtil.fireEvent(getGrid(), (ComponentEvent<Grid<?>>) event);
+    //             }
 
-                @Override
-                public void setDeselectAllowed(boolean deselectAllowed) {
-                    super.setDeselectAllowed(deselectAllowed);
-                    getGrid().getElement().executeJs(
-                        "this.$connector.deselectAllowed = $0",
-                        deselectAllowed);
-                }
-            };
-            setSelectionModel(model, selectionMode);
-            return model;
-        } else {
-            return super.setSelectionMode(selectionMode);
-        }
-    }
+    //             @Override
+    //             public void setDeselectAllowed(boolean deselectAllowed) {
+    //                 super.setDeselectAllowed(deselectAllowed);
+    //                 getGrid().getElement().executeJs(
+    //                     "this.$connector.deselectAllowed = $0",
+    //                     deselectAllowed);
+    //             }
+    //         };
+    //         setSelectionModel(model, selectionMode);
+    //         return model;
+    //     } else {
+    //         return super.setSelectionMode(selectionMode);
+    //     }
+    // }
     
    
     /**
@@ -454,14 +464,21 @@ public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, App
 	
 	@Override
 	public void onApplyFilter(Object filter) {
-		applyFilter();		
-	}	
+		applyFilter();
+	}
+
+	public void applyFilter() {
+		if (filterBackend)
+			applyBackendFilter();
+		else
+			applyFrontendFilter();
+	}
 	
 	/**
 	 * Apply the filters selected for each column in {@link FilterField}
 	 * 
 	 */
-	public void applyFilter() {
+	public void applyFrontendFilter() {
 		List<Predicate<T>> predicates = new ArrayList<>();
 		for(Column<T> column : getColumns()) {
 			EnhancedColumn<T> enhancedColumn = (EnhancedColumn<T>)column;
@@ -484,19 +501,98 @@ public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, App
 		
 		applyFilterPredicate(finalPredicate);		
 	}	
-	
+
 	/**
 	 * Apply filter predicate depending on the data provider
-	 * 
+	 *
 	 * @param finalPredicate
 	 */
 	protected void applyFilterPredicate(SerializablePredicate<T> finalPredicate) {
 		DataProvider<T, ?> dataProvider = getDataProvider();
-		if(dataProvider instanceof ListDataProvider<?>) {				
-			((ListDataProvider<T>)dataProvider).setFilter(finalPredicate);	
+		if(dataProvider instanceof ListDataProvider<?>) {
+			((ListDataProvider<T>)dataProvider).setFilter(finalPredicate);
 		} else if(dataProvider instanceof ConfigurableFilterDataProvider){
 			((ConfigurableFilterDataProvider<T, Void, Filter>)dataProvider).setFilter(new Filter<T>(finalPredicate));
 		}
+	}
+
+	/**
+	 * Apply the filters selected for each column in {@link FilterField}
+	 *
+	 */
+	public void applyBackendFilter() {
+		Specification<T> finalSpecification = Specification.where(null);
+		Boolean filterActive = false;
+		Boolean fireEvent = false;
+
+		for (Column<T> column : getColumns()) {
+			EnhancedColumn<T> enhancedColumn = (EnhancedColumn<T>) column;
+			if (enhancedColumn.getFilter() != null) {
+				FilterFieldDto filterFieldDto = enhancedColumn.getFilter().getValue();
+				if (filterFieldDto instanceof BackendFilterFieldDto) {
+					BackendFilterFieldDto backendFilterFieldDto = (BackendFilterFieldDto) filterFieldDto;
+					Specification spec = backendFilterFieldDto.getFilterSpecification();
+					enhancedColumn.updateFilterButtonStyle();
+
+					// skip if no filter set for column
+					if (spec == null)
+						continue;
+
+					finalSpecification = finalSpecification.and(spec);
+					filterActive = true;
+				}
+			}
+		}
+
+		applyFilterSpecification(finalSpecification);
+
+		// filter has been deactivated
+		if (Boolean.FALSE.equals(filterActive) && filterSpecification != null)
+			fireEvent = true;
+
+		// set filter spec to null of no more filter is active
+		filterSpecification = Boolean.TRUE.equals(filterActive) ? finalSpecification : null;
+
+		// notify all listeners if filter was resetted (is new) of not empty
+		if (filterSpecification != null)
+			fireEvent = true;
+
+		// fire an event?
+		if (Boolean.TRUE.equals(fireEvent))
+			fireEvent(new FilterAppliedEvent<>(this, false, filterSpecification));
+	}
+
+	/**
+	 * Apply filter specifcation depending on the data provider (if any)
+	 *
+	 * @param finalSpecification the specification to be applied
+	 */
+	protected void applyFilterSpecification(Specification<T> finalSpecification) {
+		DataProvider<T, ?> dataProvider = getDataProvider();
+		if (dataProvider instanceof ConfigurableFilterDataProvider<?, ?, ?>) {
+			try {
+				ConfigurableFilterDataProvider<T, Void, Specification<T>> filterDataProvider = (ConfigurableFilterDataProvider<T, Void, Specification<T>>) dataProvider;
+				filterDataProvider.setFilter(finalSpecification);
+			} catch (ClassCastException e) {
+				log.warn("COuld not cast data provider as expected.");
+			}
+		}
+	}
+
+	/**
+	 * Clear all selected filters and updates the displayed data.
+	 *
+	 * @return Boolean true is a filter is activated
+	 */
+	public Boolean isFiltered() {
+		for (Column<T> column : getColumns()) {
+			EnhancedColumn<T> enhancedColumn = (EnhancedColumn<T>) column;
+			if (enhancedColumn.getFilter() != null
+					&& !enhancedColumn.getFilter().isEmpty()) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	/**
@@ -510,7 +606,7 @@ public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, App
 				enhancedColumn.clearFilter();
 			}
 		}
-		applyFilter();		
+		applyFilter();
 	}	
 	
 	/**
@@ -522,6 +618,29 @@ public class EnhancedGrid<T> extends Grid<T> implements BeforeLeaveObserver, App
     @SuppressWarnings({ "unchecked", "rawtypes" })
 	public Registration addFilterClickedEventListener(ComponentEventListener<FilterClickedEvent<T>> listener) {
        return addListener(FilterClickedEvent.class, (ComponentEventListener) listener);
+   }
+
+   /**
+	* Add listener on filter-apply event.
+	*
+	* @param listener that is notified when filter is applied
+	* @return registration which can remove the listener.
+	*/
+   @SuppressWarnings({ "unchecked", "rawtypes" })
+   public Registration addFilterAppliedEventListener(ComponentEventListener<FilterAppliedEvent<T>> listener) {
+	   return addListener(FilterAppliedEvent.class, (ComponentEventListener) listener);
+   }
+
+   public void setBackendFiltering(boolean filterBackend) {
+	   this.filterBackend = filterBackend;
+   }
+
+   public boolean getBackendFiltering() {
+	   return this.filterBackend;
+   }
+
+   public Specification<T> getFilterSpecification() {
+	   return this.filterSpecification;
    }
 	   
 }

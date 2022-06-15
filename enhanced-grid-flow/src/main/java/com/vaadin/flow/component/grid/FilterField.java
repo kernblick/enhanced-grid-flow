@@ -11,9 +11,9 @@ import java.util.Optional;
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,21 +33,21 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 
 public class FilterField extends Popup {
-	
+
 	private static final String APPLY_BTN_KEY = "filter-field.apply.btn";
-	
+
 	private static final String RESET_BTN_KEY = "filter-field.reset.btn";
-	
+
 	private Button applyButton;
-	
+
 	private Button resetButton;
-	
+
 	private VerticalLayout rootLayout;
-	
+
 	private Div filterComponentDiv;
 
 	private Component filterComponent;
-	
+
 	public FilterField() {
 		rootLayout = new VerticalLayout();
 		rootLayout.setSpacing(false);
@@ -55,26 +55,27 @@ public class FilterField extends Popup {
 		rootLayout.add(filterComponentDiv, createButtonsLayout());
 		add(rootLayout);
 	}
-		
+
 	private HorizontalLayout createButtonsLayout() {
 		applyButton = new Button(getTranslation(APPLY_BTN_KEY), e -> applyFilter());
 		applyButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
-		resetButton = new Button(getTranslation(RESET_BTN_KEY), e -> resetFilter());    	
+		resetButton = new Button(getTranslation(RESET_BTN_KEY), e -> resetFilter());
 		resetButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
     	HorizontalLayout buttonsLayout = new HorizontalLayout();
     	buttonsLayout.setWidthFull();
-    	buttonsLayout.setJustifyContentMode(JustifyContentMode.END); 
+    	buttonsLayout.setJustifyContentMode(JustifyContentMode.END);
     	buttonsLayout.add(applyButton, resetButton);
     	return buttonsLayout;
 	}
 
 	public void applyFilter() {
-		applyFilterListener.onApplyFilter(((HasValue<?,?>)filterComponent).getValue());		
+		applyFilterListener.onApplyFilter(((HasValue<?,?>)filterComponent).getValue());
 		this.hide();
 	}
 
 	public void resetFilter() {
 		((HasValue<?,?>)filterComponent).clear();
+		this.applyFilter();
 	}
 
 	public void addFilterComponent(Component filterComponent) {
@@ -83,25 +84,25 @@ public class FilterField extends Popup {
 		if(!isEmptyFilter()) {
 			applyFilter();
 		}
-	}	
-	
+	}
+
 	public Component getFilterComponent() {
 		return filterComponent;
 	}
-	
+
 	public boolean isEmptyFilter() {
 		return ((HasValue<?,?>)filterComponent).isEmpty();
 	}
-		
+
 	private ApplyFilterListener applyFilterListener;
-	
+
 	public void addApplyFilterListener(ApplyFilterListener applyFilterListener) {
         this.applyFilterListener = applyFilterListener;
     }
 
 	/**
 	 * Returns the FilterField that contains the component, if any.
-	 * 
+	 *
 	 * @param component
 	 * @return
 	 */
@@ -109,6 +110,6 @@ public class FilterField extends Popup {
 		while(component != null && !(component instanceof FilterField)) {
 			component = component.getParent().orElse(null);
 		}
-		return Optional.ofNullable((FilterField)component);		
+		return Optional.ofNullable((FilterField)component);
 	}
 }
